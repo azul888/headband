@@ -7,9 +7,10 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
-import com.example.headband.binding.ActivityMainBinding;
+import com.example.headband.databinding.ActivityMainBinding;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -33,6 +34,33 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         ActivityMainBinding mainBinding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(mainBinding.getRoot());
         Button button = findViewById(R.id.datacollection);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (isCollectingData) {
+                    // Stop data collection
+                    isCollectingData = false;
+                    try {
+                        fileOutputStream.close();
+                        Toast.makeText(MainActivity.this, "Data collection stopped.", Toast.LENGTH_SHORT).show();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        Toast.makeText(MainActivity.this, "Error closing file.", Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    // Start data collection
+                    try {
+                        dataFile = new File(getFilesDir(), "data.txt");
+                        fileOutputStream = new FileOutputStream(dataFile);
+                        isCollectingData = true;
+                        Toast.makeText(MainActivity.this, "Data collection started.", Toast.LENGTH_SHORT).show();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        Toast.makeText(MainActivity.this, "Error creating file.", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        });
 
         // Initialize SensorManager and accelerometer sensor
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);

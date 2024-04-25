@@ -1,12 +1,16 @@
 package com.example.headband;
 
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
@@ -15,6 +19,7 @@ import com.example.headband.databinding.ActivityMainBinding;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
@@ -37,27 +42,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (isCollectingData) {
-                    // Stop data collection
-                    isCollectingData = false;
-                    try {
-                        fileOutputStream.close();
-                        Toast.makeText(MainActivity.this, "Data collection stopped.", Toast.LENGTH_SHORT).show();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                        Toast.makeText(MainActivity.this, "Error closing file.", Toast.LENGTH_SHORT).show();
-                    }
+                if (!isCollectingData) {
+                    startDataCollection();
                 } else {
-                    // Start data collection
-                    try {
-                        dataFile = new File(getFilesDir(), "data.txt");
-                        fileOutputStream = new FileOutputStream(dataFile);
-                        isCollectingData = true;
-                        Toast.makeText(MainActivity.this, "Data collection started.", Toast.LENGTH_SHORT).show();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                        Toast.makeText(MainActivity.this, "Error creating file.", Toast.LENGTH_SHORT).show();
-                    }
+                    stopDataCollection();
                 }
             }
         });
@@ -138,5 +126,36 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // Implement your logic to stop the sound
         isSoundPlaying = false;
         Toast.makeText(this, "Sound stopped", Toast.LENGTH_SHORT).show();
+    }
+    private void startDataCollection() {
+        isCollectingData = true;
+        Toast.makeText(this, "Starting data collection...", Toast.LENGTH_SHORT).show();
+
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.MediaColumns.DISPLAY_NAME, "SensorData.txt"); // File name
+        values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain"); // File type
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS); // Directory
+
+        Uri uri = getContentResolver().insert(MediaStore.Files.getContentUri("external"), values); // Using "external" for shared storage
+        try {
+            fileOutputStream = (FileOutputStream) getContentResolver().openOutputStream(uri);
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            Toast.makeText(this, "Failed to create file for data collection.", Toast.LENGTH_SHORT).show();
+        }
+    }
+    private void stopDataCollection() {
+        isCollectingData = false;
+        Toast.makeText(this, "Stopping data collection and saving file...", Toast.LENGTH_SHORT).show();
+        try {
+            sensorManager.unregisterListener(this);
+            if (fileOutputStream != null) {
+                fileOutputStream.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            Toast.makeText(this, "Error closing file.", Toast.LENGTH_SHORT).show();
+        }
     }
 }

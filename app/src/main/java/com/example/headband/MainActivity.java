@@ -26,6 +26,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -38,9 +39,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private boolean isCollectingData = false;
     private boolean sendToServer = false;
     private boolean isSoundPlaying = false;
+    private Sensor gyroscope;
 
     private String serverIp;
     private int portNumber;
+    private float lastGyroX, lastGyroY, lastGyroZ;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,6 +52,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         ActivityMainBinding mainBinding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(mainBinding.getRoot());
         setupUIComponents();
+        initializeSensors();
     }
 
     private void setupUIComponents() {
@@ -57,8 +62,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         setupSwitchListener(switchButton, serverIPEdit, portNumberEdit);
         setupDataCollectionButton(findViewById(R.id.datacollection), findViewById(R.id.debug));
-
-        initializeSensors();
     }
 
     private void setupSwitchListener(Switch switchButton, EditText serverIPEdit, EditText portNumberEdit) {
@@ -86,6 +89,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (debugText.getVisibility() == View.VISIBLE) {
                 debugText.setVisibility(View.GONE);
             }
+            serverIp = ((EditText) findViewById(R.id.ip_address)).getText().toString();
+            portNumber = Integer.parseInt(((EditText) findViewById(R.id.port_number)).getText().toString());
             toggleDataCollection();
         });
     }
@@ -93,8 +98,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void initializeSensors() {
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        if (accelerometer == null) {
-            Toast.makeText(this, "Accelerometer sensor not available.", Toast.LENGTH_SHORT).show();
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+
+        if (accelerometer == null || gyroscope == null) {
+            Toast.makeText(this, "Required sensors not available.", Toast.LENGTH_SHORT).show();
             finish();
         }
     }
@@ -103,7 +110,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onResume() {
         super.onResume();
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_NORMAL);
     }
+
 
     @Override
     protected void onPause() {
@@ -111,28 +120,47 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sensorManager.unregisterListener(this);
     }
 
+    private static class SensorData {
+        float accX, accY, accZ;
+        float gyroX, gyroY, gyroZ;
+    }
+
+
+    private SensorData currentSensorData = new SensorData();
+
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER && isCollectingData) {
-            float x = event.values[0];
-            float y = event.values[1];
-            float z = event.values[2];
-            handleData(x, y, z);
+        if (!isCollectingData) return;
+
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            currentSensorData.accX = event.values[0];
+            currentSensorData.accY = event.values[1];
+            currentSensorData.accZ = event.values[2];
+        } else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
+            currentSensorData.gyroX = event.values[0];
+            currentSensorData.gyroY = event.values[1];
+            currentSensorData.gyroZ = event.values[2];
+        }
+
+        handleData(currentSensorData);
+    }
+
+    private void handleData(SensorData data) {
+        if (sendToServer) {
+            sendDataToServer(data);
+        } else {
+            writeDataToFile(data);
         }
     }
+
+
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
         // Not used in this implementation
     }
 
-    private void handleData(float x, float y, float z) {
-        if (sendToServer) {
-            sendDataToServer(x, y, z);
-        } else {
-            writeDataToFile(x, y, z);
-        }
-    }
+
 
     private void toggleDataCollection() {
         if (!isCollectingData) {
@@ -214,20 +242,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
 
-    private void writeDataToFile(float x, float y, float z) {
-        String data = String.format("X: %f, Y: %f, Z: %f%n", x, y, z);
-        try {
-            fileOutputStream.write(data.getBytes());
-        } catch (IOException e) {
-            Toast.makeText(this, "Error writing to file.", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void sendDataToServer(float x, float y, float z) {
+    private void sendDataToServer(SensorData data) {
         new Thread(() -> {
             if (writer != null) {
                 try {
-                    writer.printf("%.2f,%.2f,%.2f%n", x, y, z);
+                    writer.printf("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f%n",
+                            data.accX, data.accY, data.accZ,
+                            data.gyroX, data.gyroY, data.gyroZ);
                 } catch (Exception e) {
                     runOnUiThread(() -> Toast.makeText(MainActivity.this, "Error sending data to server", Toast.LENGTH_SHORT).show());
                 }
@@ -235,11 +256,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }).start();
     }
 
+    private void writeDataToFile(SensorData data) {
+        String formattedData = String.format(Locale.US, "Acc: X=%f, Y=%f, Z=%f; Gyro: X=%f, Y=%f, Z=%f%n",
+                data.accX, data.accY, data.accZ,
+                data.gyroX, data.gyroY, data.gyroZ);
+        try {
+            fileOutputStream.write(formattedData.getBytes());
+        } catch (IOException e) {
+            Toast.makeText(this, "Error writing to file.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+
     private void handleConnectionError(Exception e) {
         runOnUiThread(() -> {
             TextView debugText = findViewById(R.id.debug);
             debugText.setVisibility(View.VISIBLE);
-            debugText.setText(String.format("Connection error: %s", e.getMessage()));
+            debugText.setText(String.format("Connection error: %s, and %s", e.getMessage(), e));
             Toast.makeText(this, "Connection error: " + e.getMessage(), Toast.LENGTH_LONG).show();
         });
     }

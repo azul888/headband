@@ -22,6 +22,9 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -30,7 +33,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private boolean isSoundPlaying = false;
     private File dataFile;
     private FileOutputStream fileOutputStream;
-    private boolean isCollectingData = false; // Flag to track data collection state
+    private boolean isCollectingData = false;
+    private int dataCount = 0; // Counter for data writes
+    private ScheduledExecutorService scheduler;
+    private final Object fileLock = new Object(); // Lock object for synchronization
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -106,13 +113,58 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // Not used in this implementation
     }
 
+//    private void startDataCollection() {
+//        isCollectingData = true;
+//        Toast.makeText(this, "Starting data collection...", Toast.LENGTH_SHORT).show();
+//        dataCount = 0; // Reset the data count
+//
+//        ContentValues values = new ContentValues();
+//        values.put(MediaStore.MediaColumns.DISPLAY_NAME, "SensorData.txt");
+//        values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+//        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+//
+//        Uri uri = getContentResolver().insert(MediaStore.Files.getContentUri("external"), values);
+//        try {
+//            fileOutputStream = (FileOutputStream) getContentResolver().openOutputStream(uri);
+//            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+//            startScheduler(); // Start the scheduler for writing iteration count to the file
+//        } catch (FileNotFoundException e) {
+//            e.printStackTrace();
+//            Toast.makeText(this, "Failed to create file for data collection.", Toast.LENGTH_SHORT).show();
+//        }
+//    }
+
+    private void startScheduler() {
+        if (scheduler != null) {
+            scheduler.shutdown();
+        }
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                if (isCollectingData) {
+                    synchronized (fileLock) {
+                        try {
+                            fileOutputStream.write(("Iteration Count: " + dataCount + "\n").getBytes());
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+    }
+
     private void writeDataToFile(float x, float y, float z) {
-        String data = "X: " + x + ", Y: " + y + ", Z: " + z + "\n";
-        try {
-            fileOutputStream.write(data.getBytes());
-        } catch (IOException e) {
-            e.printStackTrace();
-            Toast.makeText(this, "Error writing to file.", Toast.LENGTH_SHORT).show();
+        synchronized (fileLock) {
+            String data = "X: " + x + ", Y: " + y + ", Z: " + z + "\n";
+            try {
+                fileOutputStream.write(data.getBytes());
+                dataCount++; // Increment data write count
+            } catch (IOException e) {
+                e.printStackTrace();
+                Toast.makeText(this, "Error writing to file.", Toast.LENGTH_SHORT).show();
+            }
         }
     }
 

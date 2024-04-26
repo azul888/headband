@@ -1,8 +1,6 @@
 package com.example.headband;
 
-import android.app.Activity;
 import android.content.ContentValues;
-import android.content.Intent;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -14,9 +12,10 @@ import android.provider.MediaStore;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
-import com.example.headband.databinding.ActivityMainBinding;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.example.headband.databinding.ActivityMainBinding;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -31,7 +30,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private boolean isSoundPlaying = false;
-    private File dataFile;
+    //    private File dataFile;
     private FileOutputStream fileOutputStream;
     private boolean isCollectingData = false;
     private int dataCount = 0; // Counter for data writes
@@ -51,6 +50,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             public void onClick(View v) {
                 if (!isCollectingData) {
                     startDataCollection();
+                    startScheduler();
                 } else {
                     stopDataCollection();
                 }
@@ -190,6 +190,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         Uri uri = getContentResolver().insert(MediaStore.Files.getContentUri("external"), values); // Using "external" for shared storage
         try {
+            assert uri != null;
             fileOutputStream = (FileOutputStream) getContentResolver().openOutputStream(uri);
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
         } catch (FileNotFoundException e) {
@@ -204,6 +205,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             sensorManager.unregisterListener(this);
             if (fileOutputStream != null) {
                 fileOutputStream.close();
+            }
+            if (scheduler != null) {
+                scheduler.shutdown();
             }
         } catch (IOException e) {
             e.printStackTrace();

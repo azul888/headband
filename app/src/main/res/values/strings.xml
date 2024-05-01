@@ -1,4 +1,8 @@
 <resources>
     <string name="app_name">headband</string>
     <string name="start_data_collecting">Start Data Collecting</string>
+    <string name="current_file_write">Current: File Write</string>
+    <string name="ip_address">IP Address</string>
+    <string name="port_number">Port Number</string>
+    <string name="current_server_send">Current: Server Send</string>
 </resources>

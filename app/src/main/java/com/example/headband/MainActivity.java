@@ -165,12 +165,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void handleQuaternionData(float[] quaternion) {
+        float[] euler = quaternionToEuler(quaternion); // Convert quaternion to Euler angles
         if (sendToServer) {
-            sendDataToServer(quaternion);
+            sendDataToServer(euler); // Send Euler angles instead
         } else {
-            writeDataToFile(quaternion);
+            writeDataToFile(euler); // Write Euler angles instead
         }
     }
+
 
     private void establishServerConnection() {
         networkExecutor.execute(() -> {
@@ -194,22 +196,46 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         });
     }
 
-    private void sendDataToServer(float[] quaternion) {
+    private void sendDataToServer(float[] euler) {
         networkExecutor.execute(() -> {
-            if (socket != null && socket.isConnected() && writer != null) {
-                writer.printf(Locale.US, "%.4f,%.4f,%.4f,%.4f%n",
-                        quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
-            } else {
-                if (retryCount < MAX_RETRIES) {
-                    retryCount++;
-                    establishServerConnection(); // Attempt to reconnect
-                } else {
-                    retryCount = 0;
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Connection error. Please retry later.", Toast.LENGTH_SHORT).show());
+            try {
+                if (socket == null || !socket.isConnected() || writer == null) {
+                    establishServerConnection();
                 }
+                if (socket != null && socket.isConnected() && writer != null) {
+                    writer.printf(Locale.US, "%.4f,%.4f,%.4f%n",
+                            euler[0], euler[1], euler[2]);
+                } else {
+                    throw new IOException("Socket is not connected or writer is null.");
+                }
+            } catch (IOException e) {
+                runOnUiThread(() -> {
+                    if (retryCount < MAX_RETRIES) {
+                        retryCount++;
+                        Toast.makeText(MainActivity.this, "Connection error. Retrying " + retryCount + "/" + MAX_RETRIES, Toast.LENGTH_SHORT).show();
+                        sendDataToServer(euler); // Retry sending data
+                    } else {
+                        Toast.makeText(MainActivity.this, "Failed to connect after " + MAX_RETRIES + " attempts.", Toast.LENGTH_LONG).show();
+                        retryCount = 0; // Reset retry count
+                    }
+                });
             }
         });
     }
+
+
+    private void writeDataToFile(float[] euler) {
+        String formattedData = String.format(Locale.US, "Euler Angles: Roll=%f, Pitch=%f, Yaw=%f%n",
+                euler[0], euler[1], euler[2]);
+        try {
+            if (fileOutputStream != null) {
+                fileOutputStream.write(formattedData.getBytes());
+            }
+        } catch (IOException e) {
+            Toast.makeText(this, "Error writing to file.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
 
     private InetAddress getLocalIpAddress() throws SocketException {
         Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
@@ -253,17 +279,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         });
     }
 
-    private void writeDataToFile(float[] quaternion) {
-        String formattedData = String.format(Locale.US, "Quaternion: w=%f, x=%f, y=%f, z=%f%n",
-                quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
-        try {
-            if (fileOutputStream != null) {
-                fileOutputStream.write(formattedData.getBytes());
-            }
-        } catch (IOException e) {
-            Toast.makeText(this, "Error writing to file.", Toast.LENGTH_SHORT).show();
-        }
-    }
+//    private void writeDataToFile(float[] quaternion) {
+//        String formattedData = String.format(Locale.US, "Quaternion: w=%f, x=%f, y=%f, z=%f%n",
+//                quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+//        try {
+//            if (fileOutputStream != null) {
+//                fileOutputStream.write(formattedData.getBytes());
+//            }
+//        } catch (IOException e) {
+//            Toast.makeText(this, "Error writing to file.", Toast.LENGTH_SHORT).show();
+//        }
+//    }
 
     private void toggleDataCollection() {
         if (!isCollectingData) {
@@ -278,6 +304,29 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             closeResources();  // Ensure resources are closed when stopping data collection
         }
     }
+    private float[] quaternionToEuler(float[] quaternion) {
+        // Assuming quaternion = {w, x, y, z}
+        float w = quaternion[0];
+        float x = quaternion[1];
+        float y = quaternion[2];
+        float z = quaternion[3];
+
+        float t0 = +2.0f * (w * x + y * z);
+        float t1 = +1.0f - 2.0f * (x * x + y * y);
+        float roll = (float) Math.atan2(t0, t1);
+
+        float t2 = +2.0f * (w * y - z * x);
+        t2 = t2 > +1.0f ? +1.0f : t2;
+        t2 = t2 < -1.0f ? -1.0f : t2;
+        float pitch = (float) Math.asin(t2);
+
+        float t3 = +2.0f * (w * z + x * y);
+        float t4 = +1.0f - 2.0f * (y * y + z * z);
+        float yaw = (float) Math.atan2(t3, t4);
+
+        return new float[] {roll, pitch, yaw}; // Euler angles in radians
+    }
+
 
     private void createDataFile() {
         ContentValues values = new ContentValues();
